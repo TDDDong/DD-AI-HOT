@@ -1,0 +1,24 @@
+# 飞书群聊推送 & 多维表格配置（非敏感信息，可提交到仓库）
+feishu:
+  chats:
+    - chat-id: oc_xxxxxxxxxxxxxxxx
+      name: 每日英语热点
+      enabled: true
+
+  # 已有 Base 表连接信息（app_token / table_id 在飞书多维表格 URL 或 API 中获取）
+  base:
+    app-token: ${FEISHU_BASE_APP_TOKEN:}
+    table-id: ${FEISHU_BASE_TABLE_ID:}
+    batch-size: 50
+    dedup-chunk-size: 20
+    # 列名需与现有 Base 表字段完全一致，不一致时只改这里即可
+    fields:
+      word: 单词
+      translation: 中文释义
+      uk-phone: 英式音标
+      us-phone: 美式音标
+      uk-speech: 英式发音
+      us-speech: 美式发音
+      detail: 详情 JSON
+      marked: 已标记
+      imported-at: 入库时间

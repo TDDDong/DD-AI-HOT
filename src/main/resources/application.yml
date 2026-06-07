@@ -1,0 +1,65 @@
+spring:
+  application:
+    name: ai-hot
+  profiles:
+    active: dev
+  config:
+    import: optional:classpath:feishu.yaml
+  datasource:
+    url: jdbc:mysql://localhost:3306/dd_ai?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC&allowPublicKeyRetrieval=true&useSSL=false
+    username: root
+    password: 123456
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+  global-config:
+    db-config:
+      id-type: auto
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when_authorized
+
+logging:
+  level:
+    root: INFO
+    com.aihot: DEBUG
+
+feishu:
+  app-id: ${FEISHU_APP_ID:}
+  app-secret: ${FEISHU_APP_SECRET:}
+
+english:
+  hotspot:
+    api-url: ${ENGLISH_HOTSPOT_API_URL:https://v2.xxapi.cn/api/randomenglishwords}
+    connect-timeout: 10s
+    read-timeout: 30s
+
+deepseek:
+  api-key: ${DEEPSEEK_API_KEY:}
+  base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com/v1}
+  model: ${DEEPSEEK_MODEL:deepseek-chat}
+
+scheduler:
+  enabled: true
+  cron: ${SCHEDULER_CRON:0 0 8 * * ?}
+
+obsidian:
+  vault-path: ${OBSIDIAN_VAULT_PATH:}
+  vocab-subdir: 英语生词
+  sentence-subdir: 每日例句
