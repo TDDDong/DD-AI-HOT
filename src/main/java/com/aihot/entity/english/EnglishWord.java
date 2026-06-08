@@ -1,6 +1,5 @@
 package com.aihot.entity.english;
 
-import com.aihot.domain.english.EnglishWordRecord;
 import com.baomidou.mybatisplus.annotation.FieldFill;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
@@ -8,7 +7,11 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import lombok.Data;
 
+@Data
 @TableName(value = "english_word", autoResultMap = true)
 public class EnglishWord {
 
@@ -16,6 +19,8 @@ public class EnglishWord {
     private Long id;
 
     private String word;
+
+    private String bookId;
 
     private String ukPhone;
 
@@ -25,8 +30,20 @@ public class EnglishWord {
 
     private String usSpeech;
 
-    @TableField(typeHandler = JacksonTypeHandler.class)
-    private EnglishWordRecord detailJson;
+    @TableField(value = "translations_json", typeHandler = JacksonTypeHandler.class)
+    private List<WordTranslationItem> translations = new ArrayList<>();
+
+    @TableField(value = "phrases_json", typeHandler = JacksonTypeHandler.class)
+    private List<WordPhraseItem> phrases = new ArrayList<>();
+
+    @TableField(value = "rel_words_json", typeHandler = JacksonTypeHandler.class)
+    private List<WordRelWordItem> relWords = new ArrayList<>();
+
+    @TableField(value = "sentences_json", typeHandler = JacksonTypeHandler.class)
+    private List<WordSentenceItem> sentences = new ArrayList<>();
+
+    @TableField(value = "synonyms_json", typeHandler = JacksonTypeHandler.class)
+    private List<WordSynonymItem> synonyms = new ArrayList<>();
 
     private Boolean marked;
 
@@ -39,100 +56,4 @@ public class EnglishWord {
 
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updatedAt;
-
-    public Long getId() {
-        return id;
-    }
-
-    public void setId(Long id) {
-        this.id = id;
-    }
-
-    public String getWord() {
-        return word;
-    }
-
-    public void setWord(String word) {
-        this.word = word;
-    }
-
-    public String getUkPhone() {
-        return ukPhone;
-    }
-
-    public void setUkPhone(String ukPhone) {
-        this.ukPhone = ukPhone;
-    }
-
-    public String getUsPhone() {
-        return usPhone;
-    }
-
-    public void setUsPhone(String usPhone) {
-        this.usPhone = usPhone;
-    }
-
-    public String getUkSpeech() {
-        return ukSpeech;
-    }
-
-    public void setUkSpeech(String ukSpeech) {
-        this.ukSpeech = ukSpeech;
-    }
-
-    public String getUsSpeech() {
-        return usSpeech;
-    }
-
-    public void setUsSpeech(String usSpeech) {
-        this.usSpeech = usSpeech;
-    }
-
-    public EnglishWordRecord getDetailJson() {
-        return detailJson;
-    }
-
-    public void setDetailJson(EnglishWordRecord detailJson) {
-        this.detailJson = detailJson;
-    }
-
-    public Boolean getMarked() {
-        return marked;
-    }
-
-    public void setMarked(Boolean marked) {
-        this.marked = marked;
-    }
-
-    public Boolean getExported() {
-        return exported;
-    }
-
-    public void setExported(Boolean exported) {
-        this.exported = exported;
-    }
-
-    public LocalDateTime getImportedAt() {
-        return importedAt;
-    }
-
-    public void setImportedAt(LocalDateTime importedAt) {
-        this.importedAt = importedAt;
-    }
-
-    public LocalDateTime getCreatedAt() {
-        return createdAt;
-    }
-
-    public void setCreatedAt(LocalDateTime createdAt) {
-        this.createdAt = createdAt;
-    }
-
-    public LocalDateTime getUpdatedAt() {
-        return updatedAt;
-    }
-
-    public void setUpdatedAt(LocalDateTime updatedAt) {
-        this.updatedAt = updatedAt;
-    }
 }

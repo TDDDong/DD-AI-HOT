@@ -45,14 +45,4 @@ public class EnglishWordController {
     public List<EnglishWordDto> listRecent(@RequestParam(defaultValue = "20") int limit) {
         return persistenceService.listRecent(limit).stream().map(EnglishWordDto::from).toList();
     }
-
-    /** 按单词查询已入库记录。 */
-    @GetMapping("/{word}")
-    public ResponseEntity<EnglishWordDto> getByWord(@PathVariable String word) {
-        var record = persistenceService.findByWord(word);
-        if (record == null) {
-            return ResponseEntity.notFound().build();
-        }
-        return ResponseEntity.ok(EnglishWordDto.from(record));
-    }
 }

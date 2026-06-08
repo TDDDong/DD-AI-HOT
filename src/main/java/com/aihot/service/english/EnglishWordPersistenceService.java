@@ -3,7 +3,6 @@ package com.aihot.service.english;
 import com.aihot.domain.english.EnglishWordRecord;
 import com.aihot.domain.storage.SaveResult;
 import com.aihot.entity.english.EnglishWord;
-import com.aihot.integration.english.EnglishWordClient;
 import com.aihot.mapper.english.EnglishWordMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import java.time.LocalDateTime;
@@ -24,9 +23,11 @@ public class EnglishWordPersistenceService {
     private static final Logger log = LoggerFactory.getLogger(EnglishWordPersistenceService.class);
 
     private final EnglishWordMapper wordMapper;
+    private final EnglishWordEntityMapper entityMapper;
 
-    public EnglishWordPersistenceService(EnglishWordMapper wordMapper) {
+    public EnglishWordPersistenceService(EnglishWordMapper wordMapper, EnglishWordEntityMapper entityMapper) {
         this.wordMapper = wordMapper;
+        this.entityMapper = entityMapper;
     }
 
     @Transactional
@@ -71,46 +72,28 @@ public class EnglishWordPersistenceService {
                         .orderByDesc(EnglishWord::getImportedAt)
                         .last("LIMIT " + size))
                 .stream()
-                .map(EnglishWordPersistenceService::toRecord)
+                .map(entityMapper::toRecord)
                 .toList();
     }
 
     public EnglishWordRecord findByWord(String word) {
         EnglishWord entity = wordMapper.selectOne(new LambdaQueryWrapper<EnglishWord>()
                 .apply("LOWER(word) = {0}", normalizeWord(word)));
-        return entity != null ? toRecord(entity) : null;
+        return entity != null ? entityMapper.toRecord(entity) : null;
     }
 
-    private static EnglishWord toEntity(EnglishWordRecord record, LocalDateTime importedAt) {
-        EnglishWord entity = new EnglishWord();
+    public EnglishWord findEntityByWord(String word) {
+        return wordMapper.selectOne(new LambdaQueryWrapper<EnglishWord>()
+                .apply("LOWER(word) = {0}", normalizeWord(word)));
+    }
+
+    private EnglishWord toEntity(EnglishWordRecord record, LocalDateTime importedAt) {
+        EnglishWord entity = entityMapper.toEntity(record);
         entity.setWord(normalizeWord(record.word()));
-        entity.setUkPhone(record.ukPhone());
-        entity.setUsPhone(record.usPhone());
-        entity.setUkSpeech(record.ukSpeech());
-        entity.setUsSpeech(record.usSpeech());
-        entity.setDetailJson(record);
         entity.setMarked(false);
         entity.setExported(false);
         entity.setImportedAt(importedAt);
         return entity;
-    }
-
-    private static EnglishWordRecord toRecord(EnglishWord entity) {
-        if (entity.getDetailJson() != null) {
-            return entity.getDetailJson();
-        }
-        return new EnglishWordRecord(
-                entity.getWord(),
-                "",
-                entity.getUkPhone(),
-                entity.getUsPhone(),
-                entity.getUkSpeech(),
-                entity.getUsSpeech(),
-                List.of(),
-                List.of(),
-                List.of(),
-                List.of(),
-                List.of());
     }
 
     private static String normalizeWord(String word) {
