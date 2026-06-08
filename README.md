@@ -119,8 +119,9 @@ com.aihot/
 |------|------|------|
 | GET | `/api/v1/english-words/random` | 从 xxapi 拉取一个随机英语单词（不落库） |
 | POST | `/api/v1/english-words/persist` | 拉取随机单词并写入 MySQL |
-| GET | `/api/v1/english-words?limit=20` | 列出最近入库的单词 |
-| GET | `/api/v1/english-words/{word}` | 按单词查询已入库记录 |
+| GET | `/api/v1/english-words/listAll?limit=20` | 查询最近入库单词（JSON 列解析为结构化 List） |
+| GET | `/api/v1/english-words/id/{id}` | 按主键查询单词详情 |
+| GET | `/api/v1/english-words/{word}` | 按单词查询详情（忽略大小写） |
 
 ## Obsidian HTTP API
 

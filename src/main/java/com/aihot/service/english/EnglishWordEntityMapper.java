@@ -1,6 +1,14 @@
 package com.aihot.service.english;
 
 import com.aihot.domain.english.EnglishWordRecord;
+import com.aihot.dto.english.EnglishWordDetailDto;
+import com.aihot.dto.english.EnglishWordDetailDto.PhraseDto;
+import com.aihot.dto.english.EnglishWordDetailDto.RelWordDto;
+import com.aihot.dto.english.EnglishWordDetailDto.RelatedHwdDto;
+import com.aihot.dto.english.EnglishWordDetailDto.SentenceDto;
+import com.aihot.dto.english.EnglishWordDetailDto.SynonymDto;
+import com.aihot.dto.english.EnglishWordDetailDto.SynonymWordDto;
+import com.aihot.dto.english.EnglishWordDetailDto.TranslationDto;
 import com.aihot.entity.english.EnglishWord;
 import com.aihot.entity.english.RelatedHwdItem;
 import com.aihot.entity.english.SynonymWordItem;
@@ -61,6 +69,88 @@ public class EnglishWordEntityMapper {
                 mapSentences(entity.getSentences()),
                 mapSynonyms(entity.getSynonyms()),
                 mapRelWords(entity.getRelWords()));
+    }
+
+    public EnglishWordDetailDto toDetailDto(EnglishWord entity) {
+        if (entity == null) {
+            return null;
+        }
+        return new EnglishWordDetailDto(
+                entity.getId(),
+                entity.getWord(),
+                entity.getBookId(),
+                entity.getUkPhone(),
+                entity.getUsPhone(),
+                entity.getUkSpeech(),
+                entity.getUsSpeech(),
+                mapTranslationDtos(entity.getTranslations()),
+                mapPhraseDtos(entity.getPhrases()),
+                mapRelWordDtos(entity.getRelWords()),
+                mapSentenceDtos(entity.getSentences()),
+                mapSynonymDtos(entity.getSynonyms()),
+                entity.getMarked(),
+                entity.getExported(),
+                entity.getImportedAt(),
+                entity.getCreatedAt(),
+                entity.getUpdatedAt());
+    }
+
+    private static List<TranslationDto> mapTranslationDtos(List<WordTranslationItem> items) {
+        if (items == null) {
+            return List.of();
+        }
+        return items.stream()
+                .map(item -> new TranslationDto(item.getPos(), item.getTranCn()))
+                .toList();
+    }
+
+    private static List<PhraseDto> mapPhraseDtos(List<WordPhraseItem> items) {
+        if (items == null) {
+            return List.of();
+        }
+        return items.stream()
+                .map(item -> new PhraseDto(item.getContent(), item.getCn()))
+                .toList();
+    }
+
+    private static List<SentenceDto> mapSentenceDtos(List<WordSentenceItem> items) {
+        if (items == null) {
+            return List.of();
+        }
+        return items.stream()
+                .map(item -> new SentenceDto(item.getContent(), item.getCn()))
+                .toList();
+    }
+
+    private static List<SynonymDto> mapSynonymDtos(List<WordSynonymItem> items) {
+        if (items == null) {
+            return List.of();
+        }
+        return items.stream()
+                .map(item -> new SynonymDto(
+                        item.getPos(),
+                        item.getTran(),
+                        item.getWords() == null
+                                ? List.of()
+                                : item.getWords().stream()
+                                        .map(word -> new SynonymWordDto(word.getWord()))
+                                        .toList()))
+                .toList();
+    }
+
+    private static List<RelWordDto> mapRelWordDtos(List<WordRelWordItem> items) {
+        if (items == null) {
+            return List.of();
+        }
+        return items.stream()
+                .map(item -> new RelWordDto(
+                        item.getPos(),
+                        item.getHwds() == null
+                                ? List.of()
+                                : item.getHwds().stream()
+                                        .map(hwd -> new RelatedHwdDto(hwd.getHwd(), hwd.getTran()))
+                                        .toList()))
+                .toList();
     }
 
     private static List<EnglishWordRecord.WordTranslation> mapTranslations(List<WordTranslationItem> items) {

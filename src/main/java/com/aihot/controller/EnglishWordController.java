@@ -1,10 +1,11 @@
 package com.aihot.controller;
 
 import com.aihot.domain.storage.SaveResult;
+import com.aihot.dto.english.EnglishWordDetailDto;
 import com.aihot.dto.english.EnglishWordDto;
 import com.aihot.dto.english.PersistResultDto;
 import com.aihot.service.english.EnglishWordFetchService;
-import com.aihot.service.english.EnglishWordPersistenceService;
+import com.aihot.service.english.EnglishWordQueryService;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -19,12 +20,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class EnglishWordController {
 
     private final EnglishWordFetchService fetchService;
-    private final EnglishWordPersistenceService persistenceService;
+    private final EnglishWordQueryService queryService;
 
-    public EnglishWordController(
-            EnglishWordFetchService fetchService, EnglishWordPersistenceService persistenceService) {
+    public EnglishWordController(EnglishWordFetchService fetchService, EnglishWordQueryService queryService) {
         this.fetchService = fetchService;
-        this.persistenceService = persistenceService;
+        this.queryService = queryService;
     }
 
     /** 从 xxapi 拉取一个随机英语单词（不落库）。 */
@@ -40,9 +40,29 @@ public class EnglishWordController {
         return PersistResultDto.from(result);
     }
 
-    /** 列出最近入库的单词。 */
-    @GetMapping
-    public List<EnglishWordDto> listRecent(@RequestParam(defaultValue = "20") int limit) {
-        return persistenceService.listRecent(limit).stream().map(EnglishWordDto::from).toList();
+    /** 查询最近入库的单词列表（JSON 列解析为结构化字段）。 */
+    @GetMapping("/listAll")
+    public List<EnglishWordDetailDto> listAll(@RequestParam(defaultValue = "20") int limit) {
+        return queryService.listRecent(limit);
+    }
+
+    /** 按主键查询单词详情。 */
+    @GetMapping("/id/{id}")
+    public ResponseEntity<EnglishWordDetailDto> getById(@PathVariable Long id) {
+        EnglishWordDetailDto detail = queryService.findById(id);
+        if (detail == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(detail);
+    }
+
+    /** 按单词查询详情（忽略大小写）。 */
+    @GetMapping("/{word}")
+    public ResponseEntity<EnglishWordDetailDto> getByWord(@PathVariable String word) {
+        EnglishWordDetailDto detail = queryService.findByWord(word);
+        if (detail == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(detail);
     }
 }
