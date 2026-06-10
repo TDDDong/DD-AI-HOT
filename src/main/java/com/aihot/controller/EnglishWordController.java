@@ -1,15 +1,15 @@
 package com.aihot.controller;
 
 import com.aihot.domain.storage.SaveResult;
+import com.aihot.dto.english.DailyHotSentencesDto;
 import com.aihot.dto.english.EnglishWordDetailDto;
-import com.aihot.dto.english.EnglishWordDto;
 import com.aihot.dto.english.PersistResultDto;
 import com.aihot.service.english.EnglishWordFetchService;
 import com.aihot.service.english.EnglishWordQueryService;
+import java.time.LocalDate;
 import java.util.List;
-import org.springframework.http.ResponseEntity;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -27,12 +27,6 @@ public class EnglishWordController {
         this.queryService = queryService;
     }
 
-    /** 从 xxapi 拉取一个随机英语单词（不落库）。 */
-    @GetMapping("/random")
-    public EnglishWordDto fetchRandom() {
-        return EnglishWordDto.from(fetchService.fetchRandom());
-    }
-
     /** 拉取随机单词并写入 MySQL（按 word 去重）。 */
     @PostMapping("/persist")
     public PersistResultDto fetchAndPersist() {
@@ -46,23 +40,10 @@ public class EnglishWordController {
         return queryService.listRecent(limit);
     }
 
-    /** 按主键查询单词详情。 */
-    @GetMapping("/id/{id}")
-    public ResponseEntity<EnglishWordDetailDto> getById(@PathVariable Long id) {
-        EnglishWordDetailDto detail = queryService.findById(id);
-        if (detail == null) {
-            return ResponseEntity.notFound().build();
-        }
-        return ResponseEntity.ok(detail);
-    }
-
-    /** 按单词查询详情（忽略大小写）。 */
-    @GetMapping("/{word}")
-    public ResponseEntity<EnglishWordDetailDto> getByWord(@PathVariable String word) {
-        EnglishWordDetailDto detail = queryService.findByWord(word);
-        if (detail == null) {
-            return ResponseEntity.notFound().build();
-        }
-        return ResponseEntity.ok(detail);
+    /** 按日期查询当天入库的热点英语例句（UTC，date 省略时默认当天）。 */
+    @GetMapping("/daily-sentences")
+    public DailyHotSentencesDto getDailySentences(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        return queryService.findDailySentencesByDate(date);
     }
 }

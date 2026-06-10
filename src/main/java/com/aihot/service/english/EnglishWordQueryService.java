@@ -1,13 +1,18 @@
 package com.aihot.service.english;
 
+import com.aihot.dto.english.DailyHotSentencesDto;
+import com.aihot.dto.english.DailyHotSentencesDto.SentenceDto;
+import com.aihot.dto.english.DailyHotSentencesDto.WordSentencesDto;
 import com.aihot.dto.english.EnglishWordDetailDto;
 import com.aihot.entity.english.EnglishWord;
+import com.aihot.entity.english.WordSentenceItem;
 import com.aihot.mapper.english.EnglishWordMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
-import java.util.Locale;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 
 @Service
 public class EnglishWordQueryService {
@@ -20,19 +25,20 @@ public class EnglishWordQueryService {
         this.entityMapper = entityMapper;
     }
 
-    /** 按主键查询，JSON 列由 MyBatis 解析为实体内的 List 字段。 */
-    public EnglishWordDetailDto findById(Long id) {
-        if (id == null || id <= 0) {
-            throw new IllegalArgumentException("id 无效");
-        }
-        EnglishWord entity = wordMapper.selectById(id);
-        return entityMapper.toDetailDto(entity);
-    }
+    /** 查询指定日期（UTC）入库的热点英语例句，date 为空时默认当天。 */
+    public DailyHotSentencesDto findDailySentencesByDate(LocalDate date) {
+        LocalDate queryDate = date != null ? date : LocalDate.now(ZoneOffset.UTC);
+        LocalDateTime start = queryDate.atStartOfDay();
+        LocalDateTime end = queryDate.plusDays(1).atStartOfDay();
 
-    /** 按单词查询（忽略大小写）。 */
-    public EnglishWordDetailDto findByWord(String word) {
-        EnglishWord entity = findEntityByWord(word);
-        return entityMapper.toDetailDto(entity);
+        List<WordSentencesDto> words = wordMapper.selectList(new LambdaQueryWrapper<EnglishWord>()
+                        .ge(EnglishWord::getImportedAt, start)
+                        .lt(EnglishWord::getImportedAt, end)
+                        .orderByAsc(EnglishWord::getImportedAt))
+                .stream()
+                .map(this::toWordSentencesDto)
+                .toList();
+        return new DailyHotSentencesDto(queryDate, words);
     }
 
     /** 列出最近入库的单词。 */
@@ -46,15 +52,14 @@ public class EnglishWordQueryService {
                 .toList();
     }
 
-    private EnglishWord findEntityByWord(String word) {
-        if (!StringUtils.hasText(word)) {
-            throw new IllegalArgumentException("word 不能为空");
-        }
-        return wordMapper.selectOne(new LambdaQueryWrapper<EnglishWord>()
-                .apply("LOWER(word) = {0}", normalizeWord(word)));
+    private WordSentencesDto toWordSentencesDto(EnglishWord entity) {
+        List<SentenceDto> sentences = entity.getSentences() == null
+                ? List.of()
+                : entity.getSentences().stream().map(this::toSentenceDto).toList();
+        return new WordSentencesDto(entity.getWord(), sentences);
     }
 
-    private static String normalizeWord(String word) {
-        return word.trim().toLowerCase(Locale.ROOT);
+    private SentenceDto toSentenceDto(WordSentenceItem item) {
+        return new SentenceDto(item.getContent(), item.getCn());
     }
 }
