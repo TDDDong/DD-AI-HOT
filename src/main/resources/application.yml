@@ -63,3 +63,12 @@ obsidian:
   vault-path: ${OBSIDIAN_VAULT_PATH:}
   vocab-subdir: 英语生词
   sentence-subdir: 每日例句
+  news-subdir: ai-daily-hot
+
+aibase:
+  daily-url: ${AIBASE_DAILY_URL:https://www.aibase.com/zh/daily}
+  base-url: ${AIBASE_BASE_URL:https://www.aibase.com}
+  news-base-url: ${AIBASE_NEWS_BASE_URL:https://news.aibase.com}
+  connect-timeout: 10s
+  read-timeout: 30s
+  fetch-detail: true

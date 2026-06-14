@@ -8,6 +8,7 @@ public class ObsidianProperties {
     private String vaultPath = "";
     private String vocabSubdir = "英语生词";
     private String sentenceSubdir = "每日例句";
+    private String newsSubdir = "ai-daily-hot";
 
     public String getVaultPath() {
         return vaultPath;
@@ -31,5 +32,13 @@ public class ObsidianProperties {
 
     public void setSentenceSubdir(String sentenceSubdir) {
         this.sentenceSubdir = sentenceSubdir;
+    }
+
+    public String getNewsSubdir() {
+        return newsSubdir;
+    }
+
+    public void setNewsSubdir(String newsSubdir) {
+        this.newsSubdir = newsSubdir;
     }
 }

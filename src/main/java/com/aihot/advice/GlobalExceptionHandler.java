@@ -1,5 +1,6 @@
 package com.aihot.advice;
 
+import com.aihot.common.exception.AibaseFetchException;
 import com.aihot.common.exception.EnglishWordFetchException;
 import com.aihot.common.exception.FeishuStorageException;
 import com.aihot.common.exception.ObsidianStorageException;
@@ -12,6 +13,12 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(AibaseFetchException.class)
+    public ResponseEntity<Map<String, String>> handleAibaseFetch(AibaseFetchException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                .body(Map.of("error", ex.getMessage()));
+    }
 
     @ExceptionHandler(EnglishWordFetchException.class)
     public ResponseEntity<Map<String, String>> handleEnglishWordFetch(EnglishWordFetchException ex) {
