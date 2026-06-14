@@ -9,12 +9,11 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.LocalDate;
-import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
-import org.springframework.util.StringUtils;
 
 @Component
 public class DefaultAibaseDailyClient implements AibaseDailyClient {
@@ -40,40 +39,28 @@ public class DefaultAibaseDailyClient implements AibaseDailyClient {
     @Override
     public AibaseDailyBatch fetchByDate(LocalDate reportDate) {
         LocalDate targetDate = reportDate != null ? reportDate : LocalDate.now();
-        String html = fetchHtml(properties.getDailyUrl());
+        String listHtml = fetchHtml(properties.getDailyUrl());
+        String detailUrl = htmlParser
+                .resolveDailyDetailUrl(listHtml, properties.getBaseUrl(), targetDate)
+                .orElseThrow(() -> new AibaseFetchException(
+                        "aibase 日报列表页未找到日期 " + targetDate + " 的详情链接: " + properties.getDailyUrl()));
+
+        String detailHtml = fetchHtml(detailUrl);
+        Map<String, String> titleToNewsUrl =
+                htmlParser.buildTitleToNewsUrlMap(listHtml, properties.getNewsBaseUrl(), targetDate);
         List<AibaseArticle> articles =
-                htmlParser.parseDailyListForDate(html, properties.getNewsBaseUrl(), targetDate);
+                htmlParser.parseDailyDetailArticles(detailHtml, titleToNewsUrl, properties.getNewsBaseUrl());
         if (articles.isEmpty()) {
-            throw new AibaseFetchException(
-                    "aibase 日报页未解析到日期 " + targetDate + " 的新闻列表: " + properties.getDailyUrl());
+            throw new AibaseFetchException("aibase 日报详情页未解析到文章: " + detailUrl);
         }
-        List<AibaseArticle> enriched = enrichArticles(articles);
-        log.info("aibase 热点拉取完成: date={}, count={}", targetDate, enriched.size());
-        return new AibaseDailyBatch(targetDate, properties.getDailyUrl(), enriched);
+
+        log.info("aibase 热点拉取完成: date={}, detailUrl={}, count={}", targetDate, detailUrl, articles.size());
+        return new AibaseDailyBatch(targetDate, detailUrl, articles);
     }
 
     @Override
     public String fetchArticleDetail(String sourceUrl) {
-        return htmlParser.parseArticleSummary(fetchHtml(sourceUrl));
-    }
-
-    private List<AibaseArticle> enrichArticles(List<AibaseArticle> articles) {
-        if (!properties.isFetchDetail()) {
-            return articles;
-        }
-        List<AibaseArticle> result = new ArrayList<>(articles.size());
-        for (AibaseArticle article : articles) {
-            String summary = article.summary();
-            if (!StringUtils.hasText(summary)) {
-                try {
-                    summary = fetchArticleDetail(article.sourceUrl());
-                } catch (AibaseFetchException ex) {
-                    log.warn("抓取 aibase 详情失败，保留列表标题: url={}, reason={}", article.sourceUrl(), ex.getMessage());
-                }
-            }
-            result.add(new AibaseArticle(article.title(), article.sourceUrl(), summary));
-        }
-        return result;
+        throw new UnsupportedOperationException("已改为从日报详情页解析 summary，不再单独抓取新闻详情页");
     }
 
     private String fetchHtml(String url) {

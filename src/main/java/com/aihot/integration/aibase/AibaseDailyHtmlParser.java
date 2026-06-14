@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
@@ -22,12 +23,24 @@ public class AibaseDailyHtmlParser {
             "<a[^>]+href=[\"'](?:https?://(?:www\\.)?aibase\\.com)?(/news/\\d+)[\"'][^>]*>(.*?)</a>",
             Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 
-    private static final Pattern JSON_STRING_FIELD_PATTERN = Pattern.compile(
-            "\"(?:content|description|summary|desc|detail)\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\"",
-            Pattern.CASE_INSENSITIVE);
+    private static final Pattern DAILY_LINK_PATTERN =
+            Pattern.compile("href=[\"'](/(?:zh/)?daily/(\\d+))[\"']", Pattern.CASE_INSENSITIVE);
+
+    private static final Pattern DAILY_SECTION_TITLE_PATTERN = Pattern.compile(
+            "<strong>\\s*(\\d+)\\s*、\\s*(.*?)</strong>",
+            Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 
     private static final Pattern PARAGRAPH_PATTERN =
-            Pattern.compile("<p[^>]*>(.*?)</p>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+            Pattern.compile("<p[^>]*>((?:[^<]|<(?!/p>))*)</p>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+
+    private static final Pattern POST_CONTENT_PATTERN = Pattern.compile(
+            "class=\"[^\"]*\\bpost-content\\b[^\"]*\"[^>]*>(.*?)</div>\\s*<div\\s+class=\"my-8",
+            Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+
+    private static final Pattern SCRIPT_OR_STYLE_PATTERN =
+            Pattern.compile("<(script|style)[^>]*>.*?</\\1>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+
+    private static final Pattern UNICODE_ESCAPE_PATTERN = Pattern.compile("\\\\u([0-9a-fA-F]{4})");
 
     private static final DateTimeFormatter DAILY_DATE_FORMAT =
             DateTimeFormatter.ofPattern("yyyy/M/d[ HH:mm:ss][ HH:mm:ss.SSSSSSS]");
@@ -38,16 +51,74 @@ public class AibaseDailyHtmlParser {
         this.objectMapper = objectMapper;
     }
 
-    /** 优先解析 Next.js 内嵌的 initialDailyList JSON，失败时回退到 HTML 链接解析。 */
-    public List<AibaseArticle> parseDailyList(String html, String baseUrl) {
-        if (!StringUtils.hasText(html)) {
+    /** 从日报列表页解析指定日期对应的详情页 URL。 */
+    public Optional<String> resolveDailyDetailUrl(String listHtml, String baseUrl, LocalDate reportDate) {
+        if (!StringUtils.hasText(listHtml)) {
+            return Optional.empty();
+        }
+        JsonNode dailyList = extractInitialDailyList(listHtml);
+        if (dailyList != null && dailyList.isArray()) {
+            JsonNode targetDaily = selectDailyNode(dailyList, reportDate);
+            if (targetDaily != null) {
+                String dailyId = textValue(targetDaily, "Id");
+                if (StringUtils.hasText(dailyId)) {
+                    return Optional.of(buildZhDailyDetailUrl(baseUrl, dailyId));
+                }
+            }
+        }
+        return resolveDailyDetailUrlFromLinks(listHtml, baseUrl, reportDate);
+    }
+
+    /** 从列表页 ailoglist 构建标题到新闻 URL 的映射，供详情页条目匹配原文链接。 */
+    public Map<String, String> buildTitleToNewsUrlMap(String listHtml, String newsBaseUrl, LocalDate reportDate) {
+        Map<String, String> titleToUrl = new LinkedHashMap<>();
+        JsonNode dailyList = extractInitialDailyList(listHtml);
+        if (dailyList == null || !dailyList.isArray()) {
+            return titleToUrl;
+        }
+        JsonNode targetDaily = selectDailyNode(dailyList, reportDate);
+        if (targetDaily == null) {
+            return titleToUrl;
+        }
+        JsonNode articleList = targetDaily.get("ailoglist");
+        if (articleList == null || !articleList.isArray()) {
+            return titleToUrl;
+        }
+        for (JsonNode item : articleList) {
+            String newsId = textValue(item, "Id");
+            String title = cleanNewsTitle(textValue(item, "title"));
+            if (StringUtils.hasText(newsId) && StringUtils.hasText(title)) {
+                titleToUrl.put(normalizeTitleKey(title), normalizeUrl(newsBaseUrl, "/zh/news/" + newsId));
+            }
+        }
+        return titleToUrl;
+    }
+
+    /** 解析日报详情页中每条热点的标题与 summary。 */
+    public List<AibaseArticle> parseDailyDetailArticles(
+            String detailHtml, Map<String, String> titleToNewsUrl, String newsBaseUrl) {
+        if (!StringUtils.hasText(detailHtml)) {
             return List.of();
         }
-        List<AibaseArticle> fromJson = parseDailyListFromEmbeddedJson(html, baseUrl, null);
-        if (!fromJson.isEmpty()) {
-            return fromJson;
+        String decodedHtml = decodeUnicodeEscapes(prepareHtmlForSectionParsing(detailHtml));
+        List<SectionMarker> sections = findDailySections(decodedHtml);
+        if (sections.isEmpty()) {
+            return List.of();
         }
-        return parseDailyListFromLinks(html, baseUrl);
+        List<AibaseArticle> articles = new ArrayList<>(sections.size());
+        for (int i = 0; i < sections.size(); i++) {
+            SectionMarker section = sections.get(i);
+            int nextStart = i + 1 < sections.size() ? sections.get(i + 1).start() : decodedHtml.length();
+            String summary = extractSectionSummary(decodedHtml, section.end(), nextStart);
+            String sourceUrl = resolveNewsUrl(section.title(), titleToNewsUrl, newsBaseUrl);
+            articles.add(new AibaseArticle(section.title(), sourceUrl, summary));
+        }
+        return articles;
+    }
+
+    /** 兼容旧调用：列表页直接解析（无详情页时使用）。 */
+    public List<AibaseArticle> parseDailyList(String html, String baseUrl) {
+        return parseDailyListForDate(html, baseUrl, null);
     }
 
     public List<AibaseArticle> parseDailyListForDate(String html, String baseUrl, LocalDate reportDate) {
@@ -61,50 +132,126 @@ public class AibaseDailyHtmlParser {
         return parseDailyListFromLinks(html, baseUrl);
     }
 
-    public String parseArticleSummary(String html) {
+    private Optional<String> resolveDailyDetailUrlFromLinks(String listHtml, String baseUrl, LocalDate reportDate) {
+        Matcher matcher = DAILY_LINK_PATTERN.matcher(listHtml);
+        while (matcher.find()) {
+            String dailyId = matcher.group(2);
+            if (!StringUtils.hasText(dailyId)) {
+                continue;
+            }
+            if (reportDate == null) {
+                return Optional.of(buildZhDailyDetailUrl(baseUrl, dailyId));
+            }
+            String context = listHtml.substring(
+                    Math.max(0, matcher.start() - 80), Math.min(listHtml.length(), matcher.end() + 80));
+            if (context.contains(formatDailyDateLabel(reportDate))) {
+                return Optional.of(buildZhDailyDetailUrl(baseUrl, dailyId));
+            }
+        }
+        if (matcher.reset().find()) {
+            return Optional.of(buildZhDailyDetailUrl(baseUrl, matcher.group(2)));
+        }
+        return Optional.empty();
+    }
+
+    /** 中文日报详情页必须带 /zh/ 前缀，否则默认返回英文内容。 */
+    static String buildZhDailyDetailUrl(String baseUrl, String dailyId) {
+        return normalizeUrl(baseUrl, "/zh/daily/" + dailyId);
+    }
+
+    private static String formatDailyDateLabel(LocalDate date) {
+        return date.getYear() + "年" + date.getMonthValue() + "月" + date.getDayOfMonth();
+    }
+
+    private List<SectionMarker> findDailySections(String decodedHtml) {
+        List<SectionMarker> sections = new ArrayList<>();
+        Map<String, SectionMarker> dedupedByTitle = new LinkedHashMap<>();
+        Matcher matcher = DAILY_SECTION_TITLE_PATTERN.matcher(decodedHtml);
+        while (matcher.find()) {
+            String title = cleanNewsTitle(stripTags(matcher.group(2)));
+            if (!StringUtils.hasText(title)) {
+                continue;
+            }
+            String titleKey = normalizeTitleKey(title);
+            if (!dedupedByTitle.containsKey(titleKey)) {
+                dedupedByTitle.put(titleKey, new SectionMarker(matcher.start(), matcher.end(), title));
+            }
+        }
+        sections.addAll(dedupedByTitle.values());
+        return sections;
+    }
+
+    /** 优先取 SSR 正文区域，避免 script 中重复的 summary 被二次解析。 */
+    private String prepareHtmlForSectionParsing(String html) {
+        String postContent = extractPostContent(html);
+        if (StringUtils.hasText(postContent)) {
+            return postContent;
+        }
+        String withoutScripts = stripScriptAndStyleTags(html);
+        if (StringUtils.hasText(withoutScripts)) {
+            return withoutScripts;
+        }
+        return html;
+    }
+
+    private String extractPostContent(String html) {
+        Matcher matcher = POST_CONTENT_PATTERN.matcher(html);
+        return matcher.find() ? matcher.group(1) : "";
+    }
+
+    private static String stripScriptAndStyleTags(String html) {
         if (!StringUtils.hasText(html)) {
             return "";
         }
-        String fromArticleNode = parseArticleSummaryFromArticleNode(html);
-        if (StringUtils.hasText(fromArticleNode)) {
-            return fromArticleNode;
-        }
-        String fromJson = parseArticleSummaryFromEmbeddedJson(html);
-        if (StringUtils.hasText(fromJson)) {
-            return fromJson;
-        }
-        return parseArticleSummaryFromParagraphs(html);
+        return SCRIPT_OR_STYLE_PATTERN.matcher(html).replaceAll("");
     }
 
-    private String parseArticleSummaryFromArticleNode(String html) {
-        for (String marker : List.of("initialArticle", "articleDetail", "articleData")) {
-            JsonNode node = extractEmbeddedJsonObject(html, marker);
-            if (node == null || node.isNull()) {
+    private String extractSectionSummary(String decodedHtml, int sectionEnd, int nextSectionStart) {
+        String chunk = decodedHtml.substring(sectionEnd, nextSectionStart);
+        int blockquoteStart = indexOfIgnoreCase(chunk, "<blockquote");
+        if (blockquoteStart >= 0) {
+            chunk = chunk.substring(0, blockquoteStart);
+        }
+        Matcher paragraphMatcher = PARAGRAPH_PATTERN.matcher(chunk);
+        while (paragraphMatcher.find()) {
+            String rawParagraph = paragraphMatcher.group(1);
+            if (containsTag(rawParagraph, "strong") || containsTag(rawParagraph, "img")) {
                 continue;
             }
-            String summary = extractSummaryTextFromJsonNode(node);
-            if (StringUtils.hasText(summary)) {
-                return summary;
+            String text = stripTags(rawParagraph).trim();
+            if (text.startsWith("【AiBase提要") || text.startsWith("划重点")) {
+                continue;
             }
-        }
-        return "";
-    }
-
-    private String extractSummaryTextFromJsonNode(JsonNode node) {
-        for (String field : List.of("content", "description", "summary", "desc", "detail", "subtitle")) {
-            String text = normalizeArticleText(textValue(node, field));
-            if (isUsefulChineseSummary(text)) {
+            if (isUsefulSummary(text)) {
                 return text;
             }
         }
         return "";
     }
 
-    private String normalizeArticleText(String raw) {
-        if (!StringUtils.hasText(raw)) {
+    private static int indexOfIgnoreCase(String text, String needle) {
+        return text.toLowerCase().indexOf(needle.toLowerCase());
+    }
+
+    private static boolean containsTag(String html, String tag) {
+        return indexOfIgnoreCase(html, "<" + tag) >= 0;
+    }
+
+    private String resolveNewsUrl(String title, Map<String, String> titleToNewsUrl, String newsBaseUrl) {
+        if (titleToNewsUrl == null || titleToNewsUrl.isEmpty()) {
             return "";
         }
-        return stripTags(decodeJsonString(raw)).trim();
+        String key = normalizeTitleKey(title);
+        String exact = titleToNewsUrl.get(key);
+        if (StringUtils.hasText(exact)) {
+            return exact;
+        }
+        for (Map.Entry<String, String> entry : titleToNewsUrl.entrySet()) {
+            if (key.contains(entry.getKey()) || entry.getKey().contains(key)) {
+                return entry.getValue();
+            }
+        }
+        return "";
     }
 
     private List<AibaseArticle> parseDailyListFromEmbeddedJson(String html, String baseUrl, LocalDate reportDate) {
@@ -161,43 +308,6 @@ public class AibaseDailyHtmlParser {
         return new ArrayList<>(deduped.values());
     }
 
-    private String parseArticleSummaryFromEmbeddedJson(String html) {
-        String best = "";
-        long bestScore = 0;
-        Matcher matcher = JSON_STRING_FIELD_PATTERN.matcher(html);
-        while (matcher.find()) {
-            String text = normalizeArticleText(matcher.group(1));
-            if (!isUsefulChineseSummary(text)) {
-                continue;
-            }
-            long score = summaryScore(text);
-            if (score > bestScore) {
-                bestScore = score;
-                best = text;
-            }
-        }
-        return best;
-    }
-
-    private String parseArticleSummaryFromParagraphs(String html) {
-        StringBuilder summary = new StringBuilder();
-        Matcher paragraphMatcher = PARAGRAPH_PATTERN.matcher(html);
-        while (paragraphMatcher.find()) {
-            String text = stripTags(paragraphMatcher.group(1)).trim();
-            if (!isUsefulChineseSummary(text)) {
-                continue;
-            }
-            if (!summary.isEmpty()) {
-                summary.append('\n');
-            }
-            summary.append(text);
-            if (summary.length() > 2000) {
-                break;
-            }
-        }
-        return summary.toString().trim();
-    }
-
     private JsonNode extractInitialDailyList(String html) {
         return extractEmbeddedJsonArray(html, "initialDailyList");
     }
@@ -216,22 +326,6 @@ public class AibaseDailyHtmlParser {
             return null;
         }
         return parseEmbeddedJsonFragment(html.substring(arrayStart, arrayEnd + 1));
-    }
-
-    private JsonNode extractEmbeddedJsonObject(String html, String marker) {
-        int markerIndex = html.indexOf(marker);
-        if (markerIndex < 0) {
-            return null;
-        }
-        int objectStart = html.indexOf('{', markerIndex);
-        if (objectStart < 0) {
-            return null;
-        }
-        int objectEnd = findMatchingBrace(html, objectStart);
-        if (objectEnd < 0) {
-            return null;
-        }
-        return parseEmbeddedJsonFragment(html.substring(objectStart, objectEnd + 1));
     }
 
     private JsonNode parseEmbeddedJsonFragment(String rawJson) {
@@ -275,49 +369,16 @@ public class AibaseDailyHtmlParser {
         return -1;
     }
 
-    private static int findMatchingBrace(String text, int start) {
-        int depth = 0;
-        boolean inString = false;
-        boolean escaped = false;
-        for (int i = start; i < text.length(); i++) {
-            char ch = text.charAt(i);
-            if (inString) {
-                if (escaped) {
-                    escaped = false;
-                } else if (ch == '\\') {
-                    escaped = true;
-                } else if (ch == '"') {
-                    inString = false;
-                }
-                continue;
-            }
-            if (ch == '"') {
-                inString = true;
-                continue;
-            }
-            if (ch == '{') {
-                depth++;
-            } else if (ch == '}') {
-                depth--;
-                if (depth == 0) {
-                    return i;
-                }
-            }
-        }
-        return -1;
-    }
-
-    private static long summaryScore(String text) {
-        long chineseCount = text.chars().filter(AibaseDailyHtmlParser::isChineseChar).count();
-        return chineseCount * 1000L + text.length();
-    }
-
     private static LocalDate parseDailyDate(String addtime) {
         if (!StringUtils.hasText(addtime)) {
             return null;
         }
+        String normalized = addtime.trim();
+        if (normalized.contains("T")) {
+            normalized = normalized.substring(0, normalized.indexOf('T')).replace('-', '/');
+        }
         try {
-            return LocalDate.parse(addtime.trim(), DAILY_DATE_FORMAT);
+            return LocalDate.parse(normalized, DAILY_DATE_FORMAT);
         } catch (DateTimeParseException ex) {
             return null;
         }
@@ -328,29 +389,36 @@ public class AibaseDailyHtmlParser {
         return value != null && !value.isNull() ? value.asText("") : "";
     }
 
-    private static String decodeJsonString(String value) {
-        if (value == null) {
+    static String decodeUnicodeEscapes(String text) {
+        if (!StringUtils.hasText(text)) {
             return "";
         }
-        return value.replace("\\n", "\n")
-                .replace("\\r", "\r")
-                .replace("\\t", "\t")
-                .replace("\\\"", "\"")
-                .replace("\\/", "/")
-                .replace("\\\\", "\\");
+        Matcher matcher = UNICODE_ESCAPE_PATTERN.matcher(text);
+        StringBuffer buffer = new StringBuffer();
+        while (matcher.find()) {
+            matcher.appendReplacement(buffer, String.valueOf((char) Integer.parseInt(matcher.group(1), 16)));
+        }
+        matcher.appendTail(buffer);
+        return buffer.toString();
     }
 
-    private static boolean isUsefulChineseSummary(String text) {
-        if (!StringUtils.hasText(text) || text.length() < 20) {
+    private static boolean isUsefulSummary(String text) {
+        if (!StringUtils.hasText(text) || text.length() < 15) {
             return false;
         }
         long chineseCount = text.chars().filter(AibaseDailyHtmlParser::isChineseChar).count();
-        return chineseCount >= 10;
+        return chineseCount >= 5;
     }
 
     private static boolean isChineseChar(int codePoint) {
-        Character.UnicodeScript script = Character.UnicodeScript.of(codePoint);
-        return script == Character.UnicodeScript.HAN;
+        return Character.UnicodeScript.of(codePoint) == Character.UnicodeScript.HAN;
+    }
+
+    static String normalizeTitleKey(String title) {
+        if (title == null) {
+            return "";
+        }
+        return title.replaceAll("\\s+", "").trim();
     }
 
     static String cleanNewsTitle(String title) {
@@ -381,4 +449,6 @@ public class AibaseDailyHtmlParser {
                 .replaceAll("\\s+", " ")
                 .trim();
     }
+
+    private record SectionMarker(int start, int end, String title) {}
 }
