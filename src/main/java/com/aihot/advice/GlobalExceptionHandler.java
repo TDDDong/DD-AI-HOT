@@ -1,6 +1,7 @@
 package com.aihot.advice;
 
 import com.aihot.common.exception.AibaseFetchException;
+import com.aihot.common.exception.ContentNotFoundException;
 import com.aihot.common.exception.EnglishWordFetchException;
 import com.aihot.common.exception.FeishuStorageException;
 import com.aihot.common.exception.ObsidianStorageException;
@@ -13,6 +14,11 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(ContentNotFoundException.class)
+    public ResponseEntity<Map<String, String>> handleContentNotFound(ContentNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", ex.getMessage()));
+    }
 
     @ExceptionHandler(AibaseFetchException.class)
     public ResponseEntity<Map<String, String>> handleAibaseFetch(AibaseFetchException ex) {

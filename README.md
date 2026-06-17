@@ -9,7 +9,7 @@
 - 飞书官方 SDK（`oapi-sdk`）
 - xxapi 随机英语单词 API（Java `HttpClient`）
 - DeepSeek API（OpenAI 兼容，`openai-java`）
-- MySQL 8 + MyBatis-Plus + Flyway
+- MySQL 8 + MyBatis-Plus
 
 ## 环境要求
 
@@ -25,15 +25,17 @@
    cp .env.example .env
    ```
 
-2. 创建 MySQL 数据库（也可直接执行 [`docs/sql/english_word_schema.sql`](docs/sql/english_word_schema.sql)）：
+2. 创建数据库并执行建表脚本 [`docs/sql/schema.sql`](docs/sql/schema.sql)：
 
    ```sql
-   CREATE DATABASE ai_hot DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+   CREATE DATABASE dd_ai_hot DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+   USE dd_ai_hot;
+   SOURCE docs/sql/schema.sql;
    ```
 
 3. 配置 `.env` 中的 `DB_*` 等变量。
 
-4. 编译并运行（Flyway 自动执行 [`db/migration`](src/main/resources/db/migration) 初始化表结构）：
+4. 编译并运行：
 
    ```bash
    mvn spring-boot:run
@@ -111,7 +113,7 @@ com.aihot/
 
 **群聊 chat_id** 与 **Base 表连接/列名映射** 在 [`feishu.yaml`](src/main/resources/feishu.yaml) 中配置。
 
-**单词数据** 存储在 MySQL 表 `english_word`（按 `word` 去重）。完整建表语句见 [`docs/sql/english_word_schema.sql`](docs/sql/english_word_schema.sql)。
+**单词数据** 存储在 MySQL 表 `english_word`（按 `word` 去重）。完整建表语句见 [`docs/sql/schema.sql`](docs/sql/schema.sql)。
 
 ## 英语热点 HTTP API
 

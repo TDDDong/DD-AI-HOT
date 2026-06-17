@@ -13,6 +13,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -113,6 +114,10 @@ public class AiNewsPersistenceService {
             entity.setExtraJson(new LinkedHashMap<>());
         }
         entity.getExtraJson().put("source", sourceType);
+        // tags_json 预留给后续 AI 热词写回；同步 aibase 时不覆盖已有热词
+        if (isNew && entity.getTagsJson() == null) {
+            entity.setTagsJson(new ArrayList<>());
+        }
 
         if (isNew) {
             articleMapper.insert(entity);
