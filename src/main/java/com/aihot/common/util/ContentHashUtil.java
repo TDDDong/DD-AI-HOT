@@ -26,4 +26,8 @@ public final class ContentHashUtil {
     public static String articleKey(String sourceType, LocalDate reportDate, int rankNo) {
         return sha256(sourceType + "|" + reportDate + "|" + rankNo);
     }
+
+    public static String tweetArticleKey(String tweetId) {
+        return sha256("twitter|tweet|" + tweetId);
+    }
 }

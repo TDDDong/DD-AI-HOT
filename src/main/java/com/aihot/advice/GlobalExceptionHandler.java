@@ -5,6 +5,7 @@ import com.aihot.common.exception.ContentNotFoundException;
 import com.aihot.common.exception.EnglishWordFetchException;
 import com.aihot.common.exception.FeishuStorageException;
 import com.aihot.common.exception.ObsidianStorageException;
+import com.aihot.common.exception.TwitterFetchException;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -40,6 +41,12 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(ObsidianStorageException.class)
     public ResponseEntity<Map<String, String>> handleObsidianStorage(ObsidianStorageException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                .body(Map.of("error", ex.getMessage()));
+    }
+
+    @ExceptionHandler(TwitterFetchException.class)
+    public ResponseEntity<Map<String, String>> handleTwitterFetch(TwitterFetchException ex) {
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
                 .body(Map.of("error", ex.getMessage()));
     }
