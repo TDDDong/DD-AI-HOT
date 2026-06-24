@@ -77,12 +77,64 @@ public class TwitterResponseMapper {
                 .toList();
     }
 
+    /**
+     * 增量同步过滤：保留推文发布时间严格晚于游标（落库时间）的条目。
+     * 游标为 {@code content_article.created_at}，与 CLI 返回的 {@code createdAt} 比较。
+     */
+    public List<TwitterPost> filterPostsAfter(List<TwitterPost> posts, Instant cursorExclusive) {
+        if (cursorExclusive == null) {
+            return posts;
+        }
+        return posts.stream().filter(post -> post.createdAt().isAfter(cursorExclusive)).toList();
+    }
+
+    /** 供日志使用的 CLI 输出摘要（不抛异常）。 */
+    public String summarizeForLog(String rawOutput) {
+        if (!StringUtils.hasText(rawOutput)) {
+            return "empty output";
+        }
+        try {
+            JsonNode root = objectMapper.readTree(extractJsonPayload(rawOutput));
+            if (root.has("ok") && !root.get("ok").asBoolean()) {
+                String code = root.path("error").path("code").asText("unknown");
+                String message = root.path("error").path("message").asText("twitter-cli 执行失败");
+                return "ok=false, code=" + code + ", message=" + truncateForLog(message);
+            }
+            JsonNode data = root.path("data");
+            if (data.isArray()) {
+                return "ok=true, items=" + data.size();
+            }
+            if (data.has("user")) {
+                String screenName = data.path("user").path("screenName").asText("");
+                if (!StringUtils.hasText(screenName)) {
+                    screenName = data.path("user").path("username").asText("");
+                }
+                return "ok=true, user=" + screenName;
+            }
+            if (root.has("ok")) {
+                return "ok=true";
+            }
+            return "bytes=" + rawOutput.length();
+        } catch (Exception ex) {
+            return "unparsed, bytes=" + rawOutput.length();
+        }
+    }
+
+    /** 去掉非 JSON 前缀/后缀，仅保留完整 JSON 对象（兜底）。 */
+    private static String extractJsonPayload(String rawOutput) {
+        return TwitterCliOutputSanitizer.extractJsonPayload(rawOutput);
+    }
+
     private JsonNode unwrapSuccessData(String rawOutput) {
         if (!StringUtils.hasText(rawOutput)) {
             throw new TwitterFetchException("twitter-cli 返回空输出");
         }
+        String jsonPayload = extractJsonPayload(rawOutput);
+        if (!StringUtils.hasText(jsonPayload)) {
+            throw new TwitterFetchException("twitter-cli 输出中未找到 JSON 正文");
+        }
         try {
-            JsonNode root = objectMapper.readTree(rawOutput);
+            JsonNode root = objectMapper.readTree(jsonPayload);
             if (root.has("ok") && !root.get("ok").asBoolean()) {
                 String message = root.path("error").path("message").asText("twitter-cli 执行失败");
                 throw new TwitterFetchException(message);
@@ -94,7 +146,8 @@ public class TwitterResponseMapper {
         } catch (TwitterFetchException ex) {
             throw ex;
         } catch (Exception ex) {
-            throw new TwitterFetchException("解析 twitter-cli JSON 失败", ex);
+            throw new TwitterFetchException(
+                    "解析 twitter-cli JSON 失败: " + truncateForLog(jsonPayload), ex);
         }
     }
 
@@ -203,5 +256,12 @@ public class TwitterResponseMapper {
 
     private static String normalizeHandle(String handle) {
         return handle == null ? "" : handle.trim().replace("@", "");
+    }
+
+    private static String truncateForLog(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.length() <= 200 ? value : value.substring(0, 200) + "...";
     }
 }

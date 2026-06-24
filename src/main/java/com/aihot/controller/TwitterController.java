@@ -1,7 +1,11 @@
 package com.aihot.controller;
 
 import com.aihot.dto.twitter.FetchTwitterPostsResponse;
+import com.aihot.dto.twitter.RefreshTwitterFollowingResponse;
+import com.aihot.dto.twitter.SyncTwitterPostsResponse;
+import com.aihot.dto.twitter.TwitterAuthorSyncStateDto;
 import com.aihot.dto.twitter.TwitterDailyDto;
+import com.aihot.dto.twitter.TwitterFollowingListDto;
 import com.aihot.dto.twitter.TwitterPostDto;
 import com.aihot.dto.twitter.TwitterUserDto;
 import com.aihot.service.twitter.TwitterFetchService;
@@ -34,20 +38,43 @@ public class TwitterController {
         return queryService.toUserDto(fetchService.currentUser());
     }
 
-    /**
-     * 获取关注列表。
-     * screenName 为空时使用当前登录用户；与拉取推文解耦，不落库。
-     */
+    /** 已落库关注列表（读库，不调用 X API）。 */
     @GetMapping("/following")
     public List<TwitterUserDto> listFollowing(
-            @RequestParam(required = false) String screenName,
+            @RequestParam(required = false) String ownerScreenName,
             @RequestParam(defaultValue = "0") int max) {
-        return queryService.toUserDtos(fetchService.listFollowing(screenName, max));
+        return queryService.listStoredFollowing(ownerScreenName, max);
     }
 
     /**
-     * 拉取指定博主推文（user-posts），按 from/to 在 Java 侧过滤后幂等落库。
+     * 已落库关注列表 + 推文同步状态（列表页读库）。
+     * 刷新关注请调用 {@link #refreshFollowing}。
      */
+    @GetMapping("/following-with-status")
+    public TwitterFollowingListDto listFollowingWithStatus(
+            @RequestParam(required = false) String ownerScreenName,
+            @RequestParam(defaultValue = "0") int max) {
+        return queryService.listStoredFollowingWithStatus(ownerScreenName, max);
+    }
+
+    /** 从 X 拉取关注列表并落库（列表页「刷新关注」按钮）。 */
+    @PostMapping("/following/refresh")
+    public RefreshTwitterFollowingResponse refreshFollowing(
+            @RequestParam(required = false) String ownerScreenName,
+            @RequestParam(defaultValue = "0") int max) {
+        return RefreshTwitterFollowingResponse.from(fetchService.refreshFollowing(ownerScreenName, max));
+    }
+
+    @PostMapping("/posts/sync")
+    public SyncTwitterPostsResponse syncPosts(@RequestParam String handle) {
+        return SyncTwitterPostsResponse.from(fetchService.syncPosts(handle));
+    }
+
+    @GetMapping("/author/sync-state")
+    public TwitterAuthorSyncStateDto authorSyncState(@RequestParam String handle) {
+        return TwitterAuthorSyncStateDto.from(queryService.getAuthorSyncState(handle));
+    }
+
     @PostMapping("/posts/fetch-and-persist")
     public FetchTwitterPostsResponse fetchAndPersistPosts(
             @RequestParam String handle,
@@ -57,7 +84,6 @@ public class TwitterController {
         return FetchTwitterPostsResponse.from(fetchService.fetchPostsAndPersist(handle, from, to, maxPosts));
     }
 
-    /** 已落库推文列表。 */
     @GetMapping("/posts/listAll")
     public List<TwitterPostDto> listPosts(
             @RequestParam(required = false) String handle,
@@ -68,7 +94,6 @@ public class TwitterController {
         return queryService.listPosts(handle, from, to, keyword, limit);
     }
 
-    /** 指定博主某日的已落库推文。 */
     @GetMapping("/posts/daily")
     public TwitterDailyDto getDaily(
             @RequestParam String handle,

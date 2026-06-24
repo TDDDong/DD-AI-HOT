@@ -11,6 +11,7 @@ public class TwitterProperties {
     private boolean enabled = false;
     private String cliPath = "twitter";
     private int maxPosts = 50;
+    private int initialFetchCount = 5;
     private int maxFollowing = 200;
     private Duration processTimeout = Duration.ofSeconds(120);
     private String authToken = "";
@@ -46,6 +47,14 @@ public class TwitterProperties {
 
     public void setMaxPosts(int maxPosts) {
         this.maxPosts = maxPosts;
+    }
+
+    public int getInitialFetchCount() {
+        return initialFetchCount;
+    }
+
+    public void setInitialFetchCount(int initialFetchCount) {
+        this.initialFetchCount = initialFetchCount;
     }
 
     public int getMaxFollowing() {

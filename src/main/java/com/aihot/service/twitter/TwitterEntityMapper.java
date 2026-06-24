@@ -1,15 +1,18 @@
 package com.aihot.service.twitter;
 
 import com.aihot.config.properties.TwitterProperties;
+import com.aihot.dto.twitter.TwitterFollowingItemDto;
 import com.aihot.dto.twitter.TwitterPostDto;
 import com.aihot.dto.twitter.TwitterUserDto;
 import com.aihot.domain.twitter.TwitterPost;
 import com.aihot.domain.twitter.TwitterUser;
 import com.aihot.entity.content.ContentArticle;
 import com.aihot.entity.content.ContentDigest;
+import com.aihot.entity.twitter.TwitterFollowing;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.time.LocalDateTime;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -28,6 +31,37 @@ public class TwitterEntityMapper {
                 user.following(),
                 user.tweets(),
                 user.verified());
+    }
+
+    public TwitterUserDto toUserDto(TwitterFollowing entity) {
+        if (entity == null) {
+            return null;
+        }
+        return new TwitterUserDto(
+                entity.getUserId(),
+                entity.getName() != null ? entity.getName() : "",
+                entity.getScreenName(),
+                entity.getBio() != null ? entity.getBio() : "",
+                entity.getFollowersCount() != null ? entity.getFollowersCount() : 0,
+                entity.getFollowingCount() != null ? entity.getFollowingCount() : 0,
+                entity.getTweetsCount() != null ? entity.getTweetsCount() : 0,
+                Boolean.TRUE.equals(entity.getVerified()));
+    }
+
+    public TwitterFollowingItemDto toFollowingItemDto(
+            TwitterFollowing entity, boolean postsSynced, LocalDateTime postsLastFetchedAt, long postCount) {
+        return new TwitterFollowingItemDto(
+                entity.getUserId(),
+                entity.getName() != null ? entity.getName() : "",
+                entity.getScreenName(),
+                entity.getBio() != null ? entity.getBio() : "",
+                entity.getFollowersCount() != null ? entity.getFollowersCount() : 0,
+                entity.getFollowingCount() != null ? entity.getFollowingCount() : 0,
+                entity.getTweetsCount() != null ? entity.getTweetsCount() : 0,
+                Boolean.TRUE.equals(entity.getVerified()),
+                postsSynced,
+                postsLastFetchedAt,
+                postCount);
     }
 
     public TwitterPostDto toPostDto(ContentArticle article, ContentDigest digest) {

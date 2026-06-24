@@ -89,3 +89,27 @@ CREATE TABLE IF NOT EXISTS content_article_tag (
     PRIMARY KEY (article_id, tag_id),
     KEY idx_content_article_tag_tag_id (tag_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
+-- Twitter/X 关注列表（落库，列表页读库；刷新走独立接口）
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS twitter_following (
+    id                  BIGINT          NOT NULL AUTO_INCREMENT COMMENT '主键',
+    owner_screen_name   VARCHAR(64)     NOT NULL COMMENT '关注列表所属账号（当前登录用户）',
+    user_id             VARCHAR(64)     NOT NULL COMMENT 'X 用户 ID',
+    screen_name         VARCHAR(64)     NOT NULL COMMENT '被关注用户 @ 名（规范化小写）',
+    name                VARCHAR(256)    NULL COMMENT '显示名',
+    bio                 VARCHAR(512)    NULL COMMENT '简介',
+    followers_count     INT             NOT NULL DEFAULT 0 COMMENT '粉丝数',
+    following_count     INT             NOT NULL DEFAULT 0 COMMENT '关注数',
+    tweets_count        INT             NOT NULL DEFAULT 0 COMMENT '推文数',
+    verified            TINYINT(1)      NOT NULL DEFAULT 0 COMMENT '是否认证',
+    status              VARCHAR(16)     NOT NULL DEFAULT 'active' COMMENT 'active/removed',
+    fetched_at          DATETIME(3)     NOT NULL COMMENT '最近一次从 X 同步时间',
+    created_at          DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at          DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_twitter_following_owner_screen (owner_screen_name, screen_name),
+    KEY idx_twitter_following_owner_status (owner_screen_name, status),
+    KEY idx_twitter_following_fetched_at (owner_screen_name, fetched_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

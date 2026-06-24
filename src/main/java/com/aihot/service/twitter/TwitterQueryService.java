@@ -2,19 +2,26 @@ package com.aihot.service.twitter;
 
 import com.aihot.common.exception.ContentNotFoundException;
 import com.aihot.config.properties.TwitterProperties;
+import com.aihot.domain.twitter.TwitterAuthorSyncState;
 import com.aihot.dto.twitter.TwitterDailyDto;
+import com.aihot.dto.twitter.TwitterFollowingItemDto;
+import com.aihot.dto.twitter.TwitterFollowingListDto;
 import com.aihot.dto.twitter.TwitterPostDto;
 import com.aihot.dto.twitter.TwitterUserDto;
 import com.aihot.entity.content.ContentArticle;
 import com.aihot.entity.content.ContentDigest;
+import com.aihot.entity.twitter.TwitterFollowing;
 import com.aihot.mapper.content.ContentArticleMapper;
 import com.aihot.mapper.content.ContentDigestMapper;
+import com.aihot.mapper.twitter.TwitterFollowingMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
@@ -29,15 +36,21 @@ public class TwitterQueryService {
 
     private final ContentDigestMapper digestMapper;
     private final ContentArticleMapper articleMapper;
+    private final TwitterFollowingMapper followingMapper;
     private final TwitterEntityMapper entityMapper;
+    private final TwitterProperties twitterProperties;
 
     public TwitterQueryService(
             ContentDigestMapper digestMapper,
             ContentArticleMapper articleMapper,
-            TwitterEntityMapper entityMapper) {
+            TwitterFollowingMapper followingMapper,
+            TwitterEntityMapper entityMapper,
+            TwitterProperties twitterProperties) {
         this.digestMapper = digestMapper;
         this.articleMapper = articleMapper;
+        this.followingMapper = followingMapper;
         this.entityMapper = entityMapper;
+        this.twitterProperties = twitterProperties;
     }
 
     public List<TwitterPostDto> listPosts(
@@ -56,8 +69,7 @@ public class TwitterQueryService {
         int size = clampLimit(limit);
         LambdaQueryWrapper<ContentArticle> wrapper = new LambdaQueryWrapper<ContentArticle>()
                 .in(ContentArticle::getDigestId, digestIds)
-                .orderByDesc(ContentArticle::getReportDate)
-                .orderByAsc(ContentArticle::getRankNo)
+                .orderByDesc(ContentArticle::getCreatedAt)
                 .last("LIMIT " + size);
 
         if (StringUtils.hasText(keyword)) {
@@ -98,12 +110,105 @@ public class TwitterQueryService {
                 postDtos);
     }
 
+    public List<TwitterUserDto> listStoredFollowing(String ownerScreenName, int max) {
+        String owner = resolveOwnerScreenName(ownerScreenName);
+        if (owner == null) {
+            return List.of();
+        }
+        return listActiveFollowingEntities(owner, max).stream().map(entityMapper::toUserDto).toList();
+    }
+
+    /** 从库读取关注列表并附带推文同步状态（列表页专用，不调用 X API）。 */
+    public TwitterFollowingListDto listStoredFollowingWithStatus(String ownerScreenName, int max) {
+        String owner = resolveOwnerScreenName(ownerScreenName);
+        if (owner == null) {
+            return new TwitterFollowingListDto(null, null, 0, List.of());
+        }
+        List<TwitterFollowing> rows = listActiveFollowingEntities(owner, max);
+        LocalDateTime listFetchedAt = rows.stream()
+                .map(TwitterFollowing::getFetchedAt)
+                .filter(Objects::nonNull)
+                .max(LocalDateTime::compareTo)
+                .orElse(null);
+        List<TwitterFollowingItemDto> items = rows.stream().map(this::toStoredFollowingItem).toList();
+        return new TwitterFollowingListDto(owner, listFetchedAt, items.size(), items);
+    }
+
     public TwitterUserDto toUserDto(com.aihot.domain.twitter.TwitterUser user) {
         return entityMapper.toUserDto(user);
     }
 
     public List<TwitterUserDto> toUserDtos(List<com.aihot.domain.twitter.TwitterUser> users) {
         return users.stream().map(entityMapper::toUserDto).toList();
+    }
+
+    /** 某博主最新一条推文的落库时间（增量同步游标）。 */
+    public Optional<LocalDateTime> findLastFetchedAt(String handle) {
+        ContentArticle latest = findLatestArticle(normalizeHandle(handle));
+        if (latest == null || latest.getCreatedAt() == null) {
+            return Optional.empty();
+        }
+        return Optional.of(latest.getCreatedAt());
+    }
+
+    /** 某博主已落库推文数量。 */
+    public long countPosts(String handle) {
+        return articleMapper.selectCount(buildHandleWrapper(normalizeHandle(handle)));
+    }
+
+    public TwitterAuthorSyncState getAuthorSyncState(String handle) {
+        String normalized = normalizeHandle(handle);
+        Optional<LocalDateTime> lastFetchedAt = findLastFetchedAt(normalized);
+        long postCount = countPosts(normalized);
+        return new TwitterAuthorSyncState(
+                normalized, postCount > 0, lastFetchedAt.orElse(null), postCount);
+    }
+
+    private TwitterFollowingItemDto toStoredFollowingItem(TwitterFollowing row) {
+        TwitterAuthorSyncState state = getAuthorSyncState(row.getScreenName());
+        return entityMapper.toFollowingItemDto(
+                row, state.synced(), state.lastFetchedAt(), state.postCount());
+    }
+
+    private List<TwitterFollowing> listActiveFollowingEntities(String owner, int max) {
+        LambdaQueryWrapper<TwitterFollowing> wrapper = new LambdaQueryWrapper<TwitterFollowing>()
+                .eq(TwitterFollowing::getOwnerScreenName, owner)
+                .eq(TwitterFollowing::getStatus, TwitterFollowing.STATUS_ACTIVE)
+                .orderByAsc(TwitterFollowing::getScreenName);
+        int limit = clampFollowingMax(max);
+        if (limit > 0) {
+            wrapper.last("LIMIT " + limit);
+        }
+        return followingMapper.selectList(wrapper);
+    }
+
+    private String resolveOwnerScreenName(String ownerScreenName) {
+        if (StringUtils.hasText(ownerScreenName)) {
+            return normalizeHandle(ownerScreenName);
+        }
+        TwitterFollowing latest = followingMapper.selectOne(new LambdaQueryWrapper<TwitterFollowing>()
+                .orderByDesc(TwitterFollowing::getFetchedAt)
+                .last("LIMIT 1"));
+        return latest != null ? latest.getOwnerScreenName() : null;
+    }
+
+    private int clampFollowingMax(int max) {
+        if (max <= 0) {
+            return twitterProperties.getMaxFollowing();
+        }
+        return Math.min(max, twitterProperties.getMaxFollowing());
+    }
+
+    private ContentArticle findLatestArticle(String handle) {
+        return articleMapper.selectOne(buildHandleWrapper(handle)
+                .orderByDesc(ContentArticle::getCreatedAt)
+                .last("LIMIT 1"));
+    }
+
+    private LambdaQueryWrapper<ContentArticle> buildHandleWrapper(String handle) {
+        String sourceType = TwitterProperties.sourceTypeForHandle(handle);
+        return new LambdaQueryWrapper<ContentArticle>()
+                .apply("JSON_UNQUOTE(JSON_EXTRACT(extra_json, '$.source')) = {0}", sourceType);
     }
 
     private List<Long> findDigestIds(String handle, LocalDate startDate, LocalDate endDate) {
@@ -147,6 +252,6 @@ public class TwitterQueryService {
     }
 
     private static String normalizeHandle(String handle) {
-        return handle.trim().replace("@", "");
+        return handle.trim().replace("@", "").toLowerCase();
     }
 }
